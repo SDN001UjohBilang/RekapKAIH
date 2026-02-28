@@ -104,15 +104,16 @@
             Lock: (p) => <Icon {...p} path={<><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></>} />,
         };
 
+        // Link Google Sheets yang sudah dipublish sebagai CSV
         const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQAXbdZYzJaet9BD-YWZQw4--W4JuPFAZMHjALokOU2ZAWlaVDewwONcas0KGrf8TXn29w3HkiA4P2t/pub?gid=1282082802&single=true&output=csv';
 
         const HABITS = [
             'Bangun Pagi', 
             'Beribadah', 
-            'Berolahraga (Kebersihan Diri)', 
+            'Kebersihan Diri', 
             'Makan Sehat & Bergizi',
-            'Gemar Belajar (Belajar Mandiri)', 
-            'Bermasyarakat (Membantu Orang Tua)', 
+            'Belajar Mandiri', 
+            'Membantu Orang Tua', 
             'Tidur Cepat'
         ];
 
@@ -163,7 +164,7 @@
 
             const getRawValue = (row, keyPart) => {
                 const key = Object.keys(row).find(k => k.toLowerCase().includes(keyPart.toLowerCase()));
-                return (row[key] || '').toString().trim();
+                return key ? (row[key] || '').toString().trim() : '';
             };
 
             const isTruthy = (val) => {
@@ -173,46 +174,58 @@
                 return s.length > 0 && !negatives.includes(s);
             };
 
-            const fetchData = () => {
+            const fetchData = async () => {
                 setLoading(true);
-                Papa.parse(CSV_URL, {
-                    download: true, header: true, skipEmptyLines: true,
-                    complete: (results) => {
-                        try {
-                            const cleanData = results.data.map(row => {
-                                const h1Raw = getRawValue(row, 'Bangun Pagi');
-                                const h7Raw = getRawValue(row, 'Tidur Cepat') || getRawValue(row, 'Tidur');
-                                return {
-                                    timestamp: new Date(row['Timestamp'] || row['Tanggal'] || row['Date'] || new Date()),
-                                    kelas: (row['Kelas'] || row['Class'] || 'Tidak Diketahui').toUpperCase().trim(),
-                                    nama: (row['Nama Siswa'] || row['Nama'] || 'Siswa').toUpperCase().trim(),
-                                    h1: isTruthy(h1Raw),
-                                    h1Label: h1Raw,
-                                    h2: isTruthy(getRawValue(row, 'Beribadah')),
-                                    h3: isTruthy(getRawValue(row, 'Berolahraga')),
-                                    h4: isTruthy(getRawValue(row, 'Makan Sehat')),
-                                    h5: isTruthy(getRawValue(row, 'Gemar Belajar')),
-                                    h6: isTruthy(getRawValue(row, 'Bermasyarakat')),
-                                    h7: isTruthy(h7Raw),
-                                    h7Label: h7Raw
-                                };
-                            }).filter(item => item.kelas !== 'Tidak Diketahui' && !isNaN(item.timestamp.getTime()));
-                            
-                            setRawData(cleanData);
-                            if(cleanData.length > 0) {
-                                const classes = [...new Set(cleanData.map(d => d.kelas))].sort();
-                                if (classes.length > 0 && !selectedClass) setSelectedClass(classes[0]);
+                try {
+                    // Menggunakan fetch eksplisit untuk menghindari error internal XHR di PapaParse
+                    const response = await fetch(CSV_URL);
+                    if (!response.ok) throw new Error('Gagal mengambil data dari server Google Sheets.');
+                    const csvText = await response.text();
+
+                    Papa.parse(csvText, {
+                        header: true,
+                        skipEmptyLines: true,
+                        complete: (results) => {
+                            try {
+                                const cleanData = results.data.map(row => {
+                                    const h1Raw = getRawValue(row, 'Bangun Pagi');
+                                    const h7Raw = getRawValue(row, 'Tidur Cepat') || getRawValue(row, 'Tidur');
+                                    return {
+                                        timestamp: new Date(row['Timestamp'] || row['Tanggal'] || row['Date'] || new Date()),
+                                        kelas: (row['Kelas'] || row['Class'] || 'Tidak Diketahui').toUpperCase().trim(),
+                                        nama: (row['Nama Siswa'] || row['Nama'] || 'Siswa').toUpperCase().trim(),
+                                        h1: isTruthy(h1Raw),
+                                        h1Label: h1Raw,
+                                        h2: isTruthy(getRawValue(row, 'Beribadah')),
+                                        h3: isTruthy(getRawValue(row, 'Kebersihan') || getRawValue(row, 'Berolahraga')),
+                                        h4: isTruthy(getRawValue(row, 'Makan Sehat')),
+                                        h5: isTruthy(getRawValue(row, 'Belajar') || getRawValue(row, 'Gemar Belajar')),
+                                        h6: isTruthy(getRawValue(row, 'Membantu') || getRawValue(row, 'Bermasyarakat')),
+                                        h7: isTruthy(h7Raw),
+                                        h7Label: h7Raw
+                                    };
+                                }).filter(item => item.kelas !== 'Tidak Diketahui' && !isNaN(item.timestamp.getTime()));
+                                
+                                setRawData(cleanData);
+                                if(cleanData.length > 0) {
+                                    const classes = [...new Set(cleanData.map(d => d.kelas))].sort();
+                                    if (classes.length > 0 && !selectedClass) setSelectedClass(classes[0]);
+                                }
+                                setLoading(false);
+                            } catch (err) {
+                                console.error('Data processing error:', err);
+                                setLoading(false);
                             }
+                        },
+                        error: (err) => {
+                            console.error('PapaParse error:', err);
                             setLoading(false);
-                        } catch (err) {
-                            console.error(err); setLoading(false);
                         }
-                    },
-                    error: (err) => {
-                        console.error(err); 
-                        setLoading(false);
-                    }
-                });
+                    });
+                } catch (err) {
+                    console.error('Fetch error:', err);
+                    setLoading(false);
+                }
             };
 
             useEffect(() => { if (isLoggedIn) { fetchData(); } }, [isLoggedIn]);
@@ -294,7 +307,6 @@
                         {dateInfo && <span>{dateInfo}</span>}
                     </p>
                     <div className="inline-block text-left">
-                        {/* Wrapper inline agar border-bottom mengikuti panjang konten titik-titik */}
                         <div className="border-b border-black inline-block mb-1">
                             <span className="font-bold">..............................................</span>
                         </div>
@@ -358,7 +370,7 @@
                         <div className="bg-white p-4 rounded-lg border border-slate-200 mb-4 no-print filters-container flex flex-wrap gap-4 items-end shadow-sm">
                             <div className="flex flex-wrap gap-3">
                                 <div className="w-32"><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Kelas</label>
-                                    <select value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)} className="w-full text-sm p-1.5 border border-slate-200 rounded">{availableClasses.map(c => <option key={c} value={c}>{c}</option>)}</select>
+                                    <select value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)} className="w-full text-sm p-1.5 border border-slate-200 rounded">{availableClasses.length > 0 ? availableClasses.map(c => <option key={c} value={c}>{c}</option>) : <option>Memuat...</option>}</select>
                                 </div>
                                 <div className="w-32"><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Bulan</label>
                                     <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-full text-sm p-1.5 border border-slate-200 rounded">{MONTHS.map((m, i) => <option key={i} value={i}>{m}</option>)}</select>
